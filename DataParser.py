@@ -8,8 +8,21 @@ class ParsedStruct(dict):
         self.parsed_struct = parsed_struct
         return
 
+    def __setattr__(self, name, value):
+        if name == "parsed_struct":
+            return dict.__setattr__(self, name, value)
+        if 'field' in self.parsed_struct:
+            if name in self.parsed_struct['field']:
+                self.parsed_struct['field'][name]['value'] = value
+            else:
+                raise(TypeError("no value in \"{}\"".format(name)))
+                return False
+        return True
+
     def __getattribute__(self, name):
         if name == "prints":
+            return dict.__getattribute__(self, name)
+        if name == "pack":
             return dict.__getattribute__(self, name)
         if name == "parsed_struct":
             return dict.__getattribute__(self, name)
@@ -71,6 +84,24 @@ class ParsedStruct(dict):
         print_type(self.parsed_struct, 0)
     def get_parsed(self):
         return self.parsed_struct
+
+    def pack(self, endian="<"):
+        def recursive_pack(entry, data):
+            if 'field_order' in entry:
+                for field_name in entry['field_order']:
+                    recursive_pack(entry['field'][field_name], data)
+            if 'struct' in entry:
+                __struct = entry['struct']
+                if 'array_length' in entry:
+                    for i in range(0, entry['array_length']):
+                        packed = struct.pack("{}{}".format(endian, __struct['symbol']), entry['value'][i] )
+                        data.extend(packed)
+                else:
+                    packed = struct.pack("{}{}".format(endian, __struct['symbol']), entry['value'] )
+                    data.extend(packed)
+        d = bytearray()
+        recursive_pack(self.parsed_struct, d)
+        return d
 
 
 class DataParser(dict):
