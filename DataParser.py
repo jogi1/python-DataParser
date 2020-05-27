@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 import struct
 import clang.cindex
+import linecache
+import re
 from clang.cindex import CursorKind, TokenKind
 
 class ParsedStruct(dict):
@@ -156,7 +158,7 @@ class DataParser(dict):
         if len(splits) == 2:
             parsed_struct['array_length'] = int(splits[1])
 
-        def parse_definition(definition, parsed_struct, passed_name, data, offset):
+        def parse_definition(definition, parsed_struct, passed_name, parent, data, offset):
             #print("({}) - {}".format(passed_name, definition))
             parsed_struct['name'] = passed_name
             if 'type' not in definition:
@@ -164,11 +166,18 @@ class DataParser(dict):
             else:
                 parsed_struct['type'] = definition['type']
 
+            if 'extensions' in definition:
+                parsed_struct['extensions'] = definition['extensions']
+            if 'array_length' in definition:
+                parsed_struct['array_length'] = definition['array_length']
+
             if 'is_type' in definition:
                 new_definition = self.definitions[definition['type']]
+                if 'extensions' in definition:
+                    parsed_struct['extensions'] = definition['extensions']
                 if 'array_length' in definition:
                     parsed_struct['array_length'] = definition['array_length']
-                offset = parse_definition(new_definition, parsed_struct, passed_name, data, offset)
+                offset = parse_definition(new_definition, parsed_struct, passed_name, parent, data, offset)
                 return offset
             if 'fields' in definition:
                 for field in definition['fields']:
@@ -180,11 +189,19 @@ class DataParser(dict):
                     nps = parsed_struct['field'][field['name']] = {}
                     if 'array_length' in field:
                         nps['array_length'] = field['array_length']
-                    offset = parse_definition(self.definitions[field['type']], nps, field['name'], data, offset)
+                    if 'extensions' in field:
+                        nps['extensions'] = field['extensions']
+                    if 'variable_sized_array' in field:
+                        nps['variable_sized_array'] = field['variable_sized_array']
+                    offset = parse_definition(self.definitions[field['type']], nps, field['name'], parsed_struct, data, offset)
                 return offset
                 
             if 'struct' in definition:
                 parsed_struct['struct'] = definition['struct']
+                if 'extensions' in parsed_struct:
+                    if 'array_length_reference' in parsed_struct['extensions']:
+                        arl = parsed_struct['extensions']['array_length_reference']
+                        parsed_struct['array_length'] = parent['field'][arl]['value']
                 if 'array_length' in parsed_struct:
                     v = list()
                     for i in range(0, parsed_struct['array_length']):
@@ -196,7 +213,7 @@ class DataParser(dict):
                     return offset + definition['struct']['byte_size']
             return offset
 
-        parse_definition(definition, parsed_struct, parse_type, data, 0)
+        parse_definition(definition, parsed_struct, parse_type, None, data, 0)
         return ParsedStruct(parsed_struct)
 
 
@@ -208,6 +225,7 @@ class HeaderParser:
         index = clang.cindex.Index.create()
         translation_unit = index.parse(headers, clang_args)
         self.__traverse__(translation_unit.cursor, None, self.types)
+
 
     def __traverse__(self, cursor, current_type, types):
         if cursor.kind in [CursorKind.TRANSLATION_UNIT]:
@@ -236,11 +254,16 @@ class HeaderParser:
             elif cursor.kind == CursorKind.FIELD_DECL:
                 if current_type is not None:
                     array_type = cursor.type.get_array_element_type().spelling
-
                     __field = {
                         'name': cursor.spelling,
                         'type': cursor.type.spelling,
                         }
+
+                    # there has to be a better way...
+                    line = linecache.getline(cursor.location.file.name, cursor.location.line)
+                    match = re.match(r'.*DataParser=({.*}).*', line)
+                    if match:
+                        __field['extensions'] = eval( match.group(1))
                     if array_type is not "":
                         size = cursor.type.get_size()
                         __field['type'] = array_type
@@ -249,6 +272,8 @@ class HeaderParser:
                         else:
                             __field['variable_size_array'] = True
                     current_type['fields'].append(__field)
+            else:
+                pass
         for child_node in cursor.get_children():
             self.__traverse__(child_node, current_type, types)
 
