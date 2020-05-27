@@ -113,11 +113,17 @@ class DataParser(dict):
         self.definitions.update(definitions)
 
     def parse(self, parse_type, data):
+        splits = parse_type.split(":__:")
+        if len(splits) == 2:
+            parse_type = splits[0]
         if parse_type in self.definitions:
             definition = self.definitions[parse_type]
         if not definition:
             raise TypeError("type {} not defined".format(parse_type))
+
         parsed_struct = {}
+        if len(splits) == 2:
+            parsed_struct['array_length'] = int(splits[1])
 
         def parse_definition(definition, parsed_struct, passed_name, data, offset):
             #print("({}) - {}".format(passed_name, definition))
