@@ -1,14 +1,17 @@
-#!/usr/bin/python3
-import struct
-import clang.cindex
+''' c header/data parser '''
 import linecache
 import re
-from clang.cindex import CursorKind, TokenKind
+import struct
+
+import clang.cindex
+from clang.cindex import CursorKind
+
 
 class ParsedStruct(dict):
+    ''' struct data wrapper '''
     def __init__(self, parsed_struct):
         self.parsed_struct = parsed_struct
-        return
+        super(ParsedStruct, self).__init__()
 
     def __setattr__(self, name, value):
         if name == "parsed_struct":
@@ -17,8 +20,7 @@ class ParsedStruct(dict):
             if name in self.parsed_struct['field']:
                 self.parsed_struct['field'][name]['value'] = value
             else:
-                raise(TypeError("no value in \"{}\"".format(name)))
-                return False
+                raise TypeError("no value in \"{}\"".format(name))
         return True
 
     def __getattribute__(self, name):
@@ -33,34 +35,32 @@ class ParsedStruct(dict):
         if name == "__value":
             if 'value' in self.parsed_struct:
                 return self.parsed_struct['value']
-            else:
-                raise(TypeError("no value in \"{}\"".format(name)))
+            raise TypeError("no value in \"{}\"".format(name))
 
         if 'field' in self.parsed_struct:
             if name in self.parsed_struct['field']:
                 if 'value' in self.parsed_struct['field'][name]:
                     return self.parsed_struct['field'][name]['value']
-                else:
-                    return ParsedStruct(self.parsed_struct['field'][name])
-        raise(TypeError("no entry named \"{}\"".format(name)))
+                return ParsedStruct(self.parsed_struct['field'][name])
+        raise TypeError("no entry named \"{}\"".format(name))
 
     def __str__(self):
-        fl = []
+        __fl = []
         if 'field' in self.parsed_struct:
             for field_name in self.parsed_struct['field_order']:
                 field = self.parsed_struct['field'][field_name]
-                fs = "{{ name: \"{}\", type: \"{}\"".format(field['name'], field['type'])
-                fv = field.get('value', None)
-                if fv is not None:
-                    fs = fs +  ", value: \"{}\"".format(fv)
-                fs = fs + " }"
-                fl.append(fs)
-        name = self.parsed_struct['type']
-        __type = self.parsed_struct['name']
+                __fs = "{{ name: \"{}\", type: \"{}\"".format(field['name'], field['type'])
+                __fv = field.get('value', None)
+                if __fv is not None:
+                    __fs = __fs +  ", value: \"{}\"".format(__fv)
+                __fs = __fs + " }"
+                __fl.append(__fs)
+        __type = self.parsed_struct['type']
+        __name = self.parsed_struct['name']
         __value = self.parsed_struct.get('value', None)
-        return_string =  "{{ name: \"{}\", type:\"{}\"".format(name, __type)
-        if len(fl) > 0:
-            return_string = return_string +" , fields: {}".format(", ".join(fl))
+        return_string = "{{ name: \"{}\", type:\"{}\"".format(__name, __type)
+        if len(__fl) > 0:
+            return_string = return_string +" , fields: {}".format(", ".join(__fl))
         if __value is not None:
             return_string = return_string + ", value: \"{}\"".format(__value)
         return_string = return_string + " }"
@@ -68,26 +68,30 @@ class ParsedStruct(dict):
 
 
     def prints(self):
+        ''' prints structure and values '''
         def print_type(__type, indent):
-            s = "\t" * indent;
-            l = []
+            __string = "\t" * indent
+            __list = []
             if 'name' in __type:
-                l.append(__type['name'])
+                __list.append(__type['name'])
             if 'type' in __type:
-                l.append(__type['type'])
-            s += "({})".format(" -- ".join(l))
+                __list.append(__type['type'])
+            __string += "({})".format(" -- ".join(__list))
             if 'value' in __type:
-                s += "v: \"{}\"".format(__type['value'])
-            print(s)
+                __string += "v: \"{}\"".format(__type['value'])
+            print(__string)
             if "field_order" in __type:
                 for field in __type['field_order']:
                     print_type(__type['field'][field], indent + 1)
 
         print_type(self.parsed_struct, 0)
+
     def get_parsed(self):
+        ''' return the parsed struct '''
         return self.parsed_struct
 
     def pack(self, endian="<"):
+        ''' return a packed bytestring of the struct '''
         def recursive_pack(entry, data):
             if 'field_order' in entry:
                 for field_name in entry['field_order']:
@@ -101,9 +105,9 @@ class ParsedStruct(dict):
                 else:
                     packed = struct.pack("{}{}".format(endian, __struct['symbol']), entry['value'] )
                     data.extend(packed)
-        d = bytearray()
-        recursive_pack(self.parsed_struct, d)
-        return d
+        __data = bytearray()
+        recursive_pack(self.parsed_struct, __data)
+        return __data
 
 
 class DataParser(dict):
@@ -144,8 +148,10 @@ class DataParser(dict):
                 }
             }
         self.definitions.update(definitions)
+        super(DataParser, self).__init__()
 
     def parse(self, parse_type, data):
+        ''' parse data as parsed_type '''
         splits = parse_type.split(":__:")
         if len(splits) == 2:
             parse_type = splits[0]
@@ -159,7 +165,6 @@ class DataParser(dict):
             parsed_struct['array_length'] = int(splits[1])
 
         def parse_definition(definition, parsed_struct, passed_name, parent, data, offset):
-            #print("({}) - {}".format(passed_name, definition))
             parsed_struct['name'] = passed_name
             if 'type' not in definition:
                 parsed_struct['type'] = definition['name']
@@ -195,7 +200,7 @@ class DataParser(dict):
                         nps['variable_sized_array'] = field['variable_sized_array']
                     offset = parse_definition(self.definitions[field['type']], nps, field['name'], parsed_struct, data, offset)
                 return offset
-                
+
             if 'struct' in definition:
                 parsed_struct['struct'] = definition['struct']
                 if 'extensions' in parsed_struct:
@@ -203,22 +208,21 @@ class DataParser(dict):
                         arl = parsed_struct['extensions']['array_length_reference']
                         parsed_struct['array_length'] = parent['field'][arl]['value']
                 if 'array_length' in parsed_struct:
-                    v = list()
+                    __value_list = list()
                     for i in range(0, parsed_struct['array_length']):
-                      v.append(struct.unpack_from("{}{}".format(self.endian, definition['struct']['symbol']), data, offset+ i * definition['struct']['byte_size'])[0])
-                    parsed_struct['value'] = v
+                        __value_list.append(struct.unpack_from("{}{}".format(self.endian, definition['struct']['symbol']), data, offset+ i * definition['struct']['byte_size'])[0])
+                    parsed_struct['value'] = __value_list
                     return offset + definition['struct']['byte_size'] * parsed_struct['array_length']
-                else:
-                    parsed_struct['value'] =  struct.unpack_from("{}{}".format(self.endian, definition['struct']['symbol']), data, offset)[0]
-                    return offset + definition['struct']['byte_size']
+                parsed_struct['value'] =  struct.unpack_from("{}{}".format(self.endian, definition['struct']['symbol']), data, offset)[0]
+                return offset + definition['struct']['byte_size']
             return offset
 
         parse_definition(definition, parsed_struct, parse_type, None, data, 0)
         return ParsedStruct(parsed_struct)
 
 
-
 class HeaderParser:
+    ''' parse c style headers '''
     def __init__(self, headers, clang_library_file="/lib/llvm-8/lib/libclang.so.1", clang_args=['-x', 'c', '-std=c++11', '-D__CODE_GENERATOR__']):
         clang.cindex.Config.set_library_file(clang_library_file)
         self.types = {}
@@ -264,7 +268,7 @@ class HeaderParser:
                     match = re.match(r'.*DataParser=({.*}).*', line)
                     if match:
                         __field['extensions'] = eval( match.group(1))
-                    if array_type is not "":
+                    if array_type != "":
                         size = cursor.type.get_size()
                         __field['type'] = array_type
                         if size > 0:
@@ -278,4 +282,5 @@ class HeaderParser:
             self.__traverse__(child_node, current_type, types)
 
     def get_definitions(self):
+        ''' return parsed types '''
         return self.types
