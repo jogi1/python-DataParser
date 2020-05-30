@@ -112,42 +112,33 @@ class ParsedStruct(dict):
 
 
 class DataParser(dict):
+    ''' Parses data according to struct definitions '''
     def __init__(self, definitions, endian='<'):
         self.endian = endian
-        self.definitions = {
-            'long': {
-                'name': 'long',
-                'type': 'long',
+        self.struct_builtins = [['c', 'char', 1],
+                                ['b', 'signed char', 1],
+                                ['B', 'unsigned char', 1],
+                                ['?', '_Bool', 1],
+                                ['h', 'short', 2],
+                                ['H', 'unsigned short', 2],
+                                ['i', 'int', 4],
+                                ['I', 'unsigned int', 4],
+                                ['l', 'long', 4],
+                                ['L', 'unsigned long', 4],
+                                ['q', 'long long', 8],
+                                ['Q', 'unsigned long long', 8],
+                                ['f', 'float', 4],
+                                ['d', 'double', 8]]
+
+        self.definitions = {}
+        for builtin in self.struct_builtins:
+            self.definitions[builtin[1]] = {
+                'name': builtin[1],
+                'type': builtin[1],
                 'struct': {
-                    'symbol': 'l',
-                    'byte_size': 4,
-                    }
-                },
-            'unsigned long': {
-                'name': 'unsigned long',
-                'type': 'unsigned long',
-                'struct': {
-                    'symbol': 'L',
-                    'byte_size': 4,
-                    }
-                },
-            'float': {
-                'name': 'float',
-                'type': 'float',
-                'struct': {
-                    'symbol': 'f',
-                    'byte_size': 4,
-                    }
-                },
-            'char': {
-                'name': 'char',
-                'type': 'char',
-                'struct': {
-                    'symbol': 'c',
-                    'byte_size': 1,
-                    }
-                }
-            }
+                    'symbol': builtin[0],
+                    'byte_size': builtin[2],
+                    }}
         self.definitions.update(definitions)
         super(DataParser, self).__init__()
 
