@@ -2,6 +2,7 @@
 import linecache
 import re
 import struct
+import json
 
 import clang.cindex
 from clang.cindex import CursorKind
@@ -267,7 +268,7 @@ class HeaderParser:
                     line = linecache.getline(cursor.location.file.name, cursor.location.line)
                     match = re.match(r'.*DataParser=({.*}).*', line)
                     if match:
-                        __field['extensions'] = eval( match.group(1))
+                        __field['extensions'] = json.loads(match.group(1))
                     if array_type != "":
                         size = cursor.type.get_size()
                         __field['type'] = array_type
